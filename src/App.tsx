@@ -27,38 +27,80 @@ export default function App() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [workingDaysMap, setWorkingDaysMap] = useState<Record<string, number>>({});
   
+  // Roles
+  const [userRole, setUserRole] = useState<"Admin" | "User">("User");
+  
   // Data loading / permissions handlers
   const [dataLoading, setDataLoading] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
 
-  // 1. Subscribe to Firebase Authentication change cycles
+  // Resolves the centralized tenant UID for all users (admins & invited)
+  const [resolvedUserId, setResolvedUserId] = useState<string | null>(null);
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
-      setAuthLoading(false);
       
-      // Reset caches on logouts
       if (!currentUser) {
         setRevenueClosures([]);
         setExpenses([]);
         setWorkingDaysMap({});
         setCurrentTab("dashboard");
+        setResolvedUserId(null);
+        setAuthLoading(false);
+      } else {
+        // Authenticate and figure out tenant config
+        const checkAccess = async () => {
+          let role: "Admin" | "User" = "User";
+          let tUid = currentUser.uid; // fallback to self
+          
+          try {
+            const { getDoc, setDoc, doc } = await import("firebase/firestore");
+            
+            if (currentUser.email === "uppseekers@gmail.com") {
+              role = "Admin";
+              // Admin updates generic tenant config doc with their UID so others can find it
+              try { await setDoc(doc(db, "invites", "_tenantConfig"), { adminUid: currentUser.uid }, { merge: true }); } catch (e) {}
+            } else {
+               const reqDoc = await getDoc(doc(db, "invites", currentUser.email!));
+               if (reqDoc.exists() && reqDoc.data().role) {
+                 role = reqDoc.data().role;
+                 const tenantDoc = await getDoc(doc(db, "invites", "_tenantConfig"));
+                 if (tenantDoc.exists() && tenantDoc.data().adminUid) {
+                   tUid = tenantDoc.data().adminUid;
+                 }
+               } else {
+                 // unauthorized
+                 const { signOut } = await import("firebase/auth");
+                 await signOut(auth);
+                 return;
+               }
+            }
+            setUserRole(role);
+            setResolvedUserId(tUid);
+          } catch (e) {
+            console.error("Failed to resolve identity", e);
+          } finally {
+            setAuthLoading(false);
+          }
+        };
+        checkAccess();
       }
     });
     return () => unsubscribe();
   }, []);
 
-  // 2. Real-time Database synchronization upon authentication
+  // 2. Real-time Database synchronization upon authentication & tenant resolution
   useEffect(() => {
-    if (!user) return;
+    if (!user || !resolvedUserId) return;
 
     setDataLoading(true);
     setSyncError(null);
 
-    const userId = user.uid;
+    const userId = resolvedUserId;
 
     // A. Sync Revenue Closures
-    const closuresPath = `users/${userId}/revenueClosures`;
+    const closuresPath = 'users/' + userId + '/revenueClosures';
     const closuresQuery = query(collection(db, "users", userId, "revenueClosures"), orderBy("closureDate", "desc"));
     const unsubscribeClosures = onSnapshot(
       closuresQuery,
@@ -72,13 +114,17 @@ export default function App() {
       },
       (error) => {
         console.error("Error syncing revenue closures:", error);
-        setSyncError("Your account does not have sufficient permissions yet or database is offline.");
+        if (error.code === 'permission-denied') {
+          setSyncError("Access denied. You must be an administrator or invited to access the application dataset.");
+        } else {
+          setSyncError("Your account does not have sufficient permissions yet or database is offline.");
+        }
         handleFirestoreError(error, OperationType.LIST, closuresPath);
       }
     );
 
     // B. Sync Expenses
-    const expensesPath = `users/${userId}/expenses`;
+    const expensesPath = 'users/' + userId + '/expenses';
     const expensesQuery = query(collection(db, "users", userId, "expenses"), orderBy("date", "desc"));
     const unsubscribeExpenses = onSnapshot(
       expensesQuery,
@@ -96,7 +142,7 @@ export default function App() {
     );
 
     // C. Sync Working Days configuration metadata
-    const workingDaysPath = `users/${userId}/workingDays`;
+    const workingDaysPath = 'users/' + userId + '/workingDays';
     const unsubscribeWorkingDays = onSnapshot(
       collection(db, "users", userId, "workingDays"),
       (snapshot) => {
@@ -120,7 +166,7 @@ export default function App() {
       unsubscribeExpenses();
       unsubscribeWorkingDays();
     };
-  }, [user]);
+  }, [user, resolvedUserId]);
 
   // Loading Splash Screen while checking Credentials
   if (authLoading) {
@@ -141,15 +187,18 @@ export default function App() {
 
   // Active view router mapping
   const renderTabContent = () => {
+    const isAdmin = userRole === "Admin";
+    const targetUserId = resolvedUserId || user.uid;
+    
     switch (currentTab) {
       case "dashboard":
         return <Dashboard revenueClosures={revenueClosures} expenses={expenses} workingDaysMap={workingDaysMap} />;
       case "revenue":
-        return <RevenueTracker userId={user.uid} revenueClosures={revenueClosures} />;
+        return <RevenueTracker userId={targetUserId} revenueClosures={revenueClosures} isAdmin={isAdmin} />;
       case "cost":
-        return <CostTracker userId={user.uid} expenses={expenses} workingDaysMap={workingDaysMap} />;
+        return <CostTracker userId={targetUserId} expenses={expenses} workingDaysMap={workingDaysMap} isAdmin={isAdmin} />;
       case "settings":
-        return <SettingsView userId={user.uid} userEmail={user.email} />;
+        return <SettingsView userId={targetUserId} userEmail={user.email} />;
       default:
         return <Dashboard revenueClosures={revenueClosures} expenses={expenses} workingDaysMap={workingDaysMap} />;
     }

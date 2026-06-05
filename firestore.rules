@@ -12,8 +12,21 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function isAdmin() {
+      return isSignedIn() && request.auth.token.email == 'uppseekers@gmail.com';
+    }
+
+    function isInvited() {
+      return isSignedIn() && exists(/databases/$(database)/documents/invites/$(request.auth.token.email));
+    }
+
+    function canAccessApp() {
+      return isAdmin() || isInvited();
+    }
+
     function isOwner(userId) {
-      return isSignedIn() && request.auth.uid == userId;
+      // In a strict single-tenant model, if you can access the app, you can access the admin's unified dataset.
+      return isSignedIn() && canAccessApp();
     }
 
     function isValidId(id) {
@@ -53,7 +66,7 @@ service cloud.firestore {
     function isValidExpense(data) {
       return data.keys().hasAll([
         'id', 'userId', 'category', 'description', 'amount', 'date', 'createdAt', 'updatedAt'
-      ]) && data.keys().size() == 8
+      ]) && data.keys().size() >= 8
          && data.id is string && data.id.size() <= 128
          && data.userId is string && data.userId.size() <= 128
          && data.category is string && data.category.size() <= 128
@@ -69,6 +82,11 @@ service cloud.firestore {
       ]) && data.keys().size() == 3
          && data.monthYear is string && data.monthYear.size() <= 7
          && data.workingDays is number && data.workingDays >= 0 && data.workingDays <= 31;
+    }
+
+    match /invites/{email} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
     }
 
     // Relational Isolation Match Blocks
@@ -111,6 +129,12 @@ service cloud.firestore {
                               && isValidWorkingDaysConfig(incoming())
                               && incoming().updatedAt == request.time;
         allow delete: if isOwner(userId) && isValidId(monthYear);
+      }
+
+      match /config/{configId} {
+        allow read: if isOwner(userId);
+        allow create, update: if isOwner(userId) && isValidId(configId);
+        allow delete: if isOwner(userId) && isValidId(configId);
       }
     }
   }

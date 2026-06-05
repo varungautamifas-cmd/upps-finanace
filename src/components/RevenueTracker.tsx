@@ -11,9 +11,10 @@ import {
 interface RevenueTrackerProps {
   userId: string;
   revenueClosures: RevenueClosure[];
+  isAdmin: boolean;
 }
 
-export default function RevenueTracker({ userId, revenueClosures }: RevenueTrackerProps) {
+export default function RevenueTracker({ userId, revenueClosures, isAdmin }: RevenueTrackerProps) {
   // Navigation grid controllers
   const [searchTerm, setSearchTerm] = useState("");
   const [sortField, setSortField] = useState<keyof RevenueClosure>("closureDate");
@@ -299,7 +300,7 @@ export default function RevenueTracker({ userId, revenueClosures }: RevenueTrack
           addedCount++;
         }
 
-        setSuccess(`Bulk Ingestion Finished! Successfully imported ${addedCount} closures.${skippedCount > 0 ? ` Skipped ${skippedCount} bad rows.` : ""}`);
+        setSuccess(`Bulk Ingestion Finished! Successfully imported ₹{addedCount} closures.${skippedCount > 0 ? ` Skipped ₹{skippedCount} bad rows.` : ""}`);
       } catch (err: any) {
         console.error("CSV Import error:", err);
         setError("Error processing files. Ensure columns match customer name, email, package cost, cash paid, etc.");
@@ -369,7 +370,7 @@ export default function RevenueTracker({ userId, revenueClosures }: RevenueTrack
   const formatCurrency = (val: number) => {
     return new Intl.NumberFormat("en-US", {
       style: "currency",
-      currency: "USD",
+      currency: "INR",
       minimumFractionDigits: 0,
       maximumFractionDigits: 0
     }).format(val);
@@ -442,7 +443,7 @@ export default function RevenueTracker({ userId, revenueClosures }: RevenueTrack
             onDragOver={handleDrag}
             onDrop={handleDrop}
             onClick={() => fileInputRef.current?.click()}
-            className={`cursor-pointer border-2 border-dashed rounded-xl p-4 flex flex-col items-center justify-center text-center transition-all min-h-32 ${
+            className={`cursor-pointer border-2 border-dashed rounded-xl p-4 flex flex-col items-center justify-center text-center transition-all min-h-32 ₹{
               dragActive 
                 ? "border-blue-500 bg-blue-950/30 text-blue-400"
                 : "border-[#1e293b] bg-[#020617] hover:bg-[#1e293b]/30 text-slate-400 hover:border-blue-500/65"
@@ -526,11 +527,11 @@ export default function RevenueTracker({ userId, revenueClosures }: RevenueTrack
                       <td className="p-3 text-right text-blue-400 font-semibold font-mono">
                         {formatCurrency(closure.cashPaid)}
                       </td>
-                      <td className={`p-3 text-right font-medium font-mono ${closure.remainingAmount > 0 ? "text-amber-400" : "text-slate-500"}`}>
+                      <td className={`p-3 text-right font-medium font-mono ₹{closure.remainingAmount > 0 ? "text-amber-400" : "text-slate-500"}`}>
                         {formatCurrency(closure.remainingAmount)}
                       </td>
                       <td className="p-3">
-                        <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold border ${
+                        <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold border ₹{
                           closure.paymentType === "Full Payment" 
                             ? "bg-blue-500/10 text-blue-400 border-blue-500/20"
                             : closure.paymentType === "EMI"
@@ -544,13 +545,15 @@ export default function RevenueTracker({ userId, revenueClosures }: RevenueTrack
                         {closure.closureDate}
                       </td>
                       <td className="p-3 text-right whitespace-nowrap">
-                        <button
-                          onClick={() => handleDeleteClosure(closure.id)}
-                          className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-950/30 transition-all inline-flex cursor-pointer"
-                          title="Delete closure record"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
+                        {isAdmin && (
+                          <button
+                            onClick={() => handleDeleteClosure(closure.id)}
+                            className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-950/30 transition-all inline-flex cursor-pointer"
+                            title="Delete closure record"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))
@@ -639,7 +642,7 @@ export default function RevenueTracker({ userId, revenueClosures }: RevenueTrack
 
               <div className="grid grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Package Cost (USD) *</label>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Package Cost (INR) *</label>
                   <input
                     type="number"
                     required
@@ -657,7 +660,7 @@ export default function RevenueTracker({ userId, revenueClosures }: RevenueTrack
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Tax/GST (USD) *</label>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Tax/GST (INR) *</label>
                   <input
                     type="number"
                     required
@@ -669,7 +672,7 @@ export default function RevenueTracker({ userId, revenueClosures }: RevenueTrack
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Cash Paid (USD) *</label>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Cash Paid (INR) *</label>
                   <input
                     type="number"
                     required

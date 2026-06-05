@@ -1,3 +1,4 @@
+// Imports
 import React, { useState, useRef } from "react";
 import { Expense } from "../types";
 import { db, handleFirestoreError, OperationType } from "../firebase";
@@ -7,14 +8,16 @@ import {
   HelpCircle, Download, FileSpreadsheet, AlertCircle, CheckCircle, 
   Search, ArrowUpDown, ChevronLeft, ChevronRight, X, Calendar, Settings 
 } from "lucide-react";
+import ExpenseEntryModule from "./ExpenseEntryModule";
 
 interface CostTrackerProps {
   userId: string;
   expenses: Expense[];
   workingDaysMap: Record<string, number>;
+  isAdmin: boolean;
 }
 
-export default function CostTracker({ userId, expenses, workingDaysMap }: CostTrackerProps) {
+export default function CostTracker({ userId, expenses, workingDaysMap, isAdmin }: CostTrackerProps) {
   // Navigation grid filters
   const [searchTerm, setSearchTerm] = useState("");
   const [sortField, setSortField] = useState<keyof Expense>("date");
@@ -36,61 +39,7 @@ export default function CostTracker({ userId, expenses, workingDaysMap }: CostTr
   // Notifications
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
   const [metadataSubmitting, setMetadataSubmitting] = useState(false);
-
-  // CSV elements upload references
-  const [dragActive, setDragActive] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // Manual submit handler
-  const handleAddExpense = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    setSuccess(null);
-    setSubmitting(true);
-
-    if (!description || !amount || !date) {
-      setError("Please fill in all required fields.");
-      setSubmitting(false);
-      return;
-    }
-
-    const expAmount = parseFloat(amount);
-    if (isNaN(expAmount) || expAmount <= 0) {
-      setError("Expense amount must be a positive number.");
-      setSubmitting(false);
-      return;
-    }
-
-    const id = "exp_" + Math.random().toString(36).substring(2, 11);
-    const path = `users/${userId}/expenses/${id}`;
-
-    try {
-      const docRef = doc(db, "users", userId, "expenses", id);
-      await setDoc(docRef, {
-        id,
-        userId,
-        category,
-        description,
-        amount: expAmount,
-        date,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp()
-      });
-
-      setSuccess("Operational cost recorded successfully!");
-      setIsModalOpen(false);
-      // Reset
-      setDescription("");
-      setAmount("");
-      setDate(new Date().toISOString().substring(0, 10));
-    } catch (err: any) {
-      handleFirestoreError(err, OperationType.CREATE, path);
-    } finally {
-      setSubmitting(false);
-    }
-  };
 
   // Delete matching expense
   const handleDeleteExpense = async (id: string) => {
@@ -131,7 +80,7 @@ export default function CostTracker({ userId, expenses, workingDaysMap }: CostTr
         updatedAt: serverTimestamp()
       });
 
-      setSuccess(`Saved metadata! Set ${workingDaysCount} working days for ${configYearMonth}.`);
+      setSuccess(`Saved metadata! Set ₹{workingDaysCount} working days for ₹{configYearMonth}.`);
     } catch (err: any) {
       handleFirestoreError(err, OperationType.WRITE, path);
     } finally {
@@ -139,161 +88,7 @@ export default function CostTracker({ userId, expenses, workingDaysMap }: CostTr
     }
   };
 
-  // Drag and Drop CSV Handlers
-  const handleDrag = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (e.type === "dragenter" || e.type === "dragover") {
-      setDragActive(true);
-    } else if (e.type === "dragleave") {
-      setDragActive(false);
-    }
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragActive(false);
-
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      processExpenseCSV(e.dataTransfer.files[0]);
-    }
-  };
-
-  const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      processExpenseCSV(e.target.files[0]);
-    }
-  };
-
-  const processExpenseCSV = (file: File) => {
-    setError(null);
-    setSuccess(null);
-
-    if (!file.name.endsWith(".csv")) {
-      setError("Please upload a valid .csv file.");
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-      try {
-        const text = event.target?.result as string;
-        if (!text) {
-          setError("Empty file provided.");
-          return;
-        }
-
-        const lines = text.split(/\r?\n/);
-        if (lines.length < 2) {
-          setError("CSV file should contain headers and data rows.");
-          return;
-        }
-
-        const rawHeaders = lines[0].split(",").map(h => h.trim().replace(/^["']|["']$/g, "").toLowerCase());
-
-        let categoryIdx = rawHeaders.findIndex(h => h.includes("category"));
-        let descIdx = rawHeaders.findIndex(h => h.includes("description") || h.includes("detail"));
-        let amtIdx = rawHeaders.findIndex(h => h.includes("amount") || h.includes("value") || h.includes("cost"));
-        let dateIdx = rawHeaders.findIndex(h => h.includes("date"));
-
-        if (categoryIdx === -1) categoryIdx = 0;
-        if (descIdx === -1) descIdx = 1;
-        if (amtIdx === -1) amtIdx = 2;
-        if (dateIdx === -1) dateIdx = 3;
-
-        let addedCount = 0;
-        let skippedCount = 0;
-
-        for (let i = 1; i < lines.length; i++) {
-          const line = lines[i].trim();
-          if (!line) continue;
-
-          // comma escape logic
-          const parts: string[] = [];
-          let currentPart = "";
-          let insideQuotes = false;
-          
-          for (let charIndex = 0; charIndex < line.length; charIndex++) {
-            const char = line[charIndex];
-            if (char === '"' || char === "'") {
-              insideQuotes = !insideQuotes;
-            } else if (char === "," && !insideQuotes) {
-              parts.push(currentPart.trim());
-              currentPart = "";
-            } else {
-              currentPart += char;
-            }
-          }
-          parts.push(currentPart.trim());
-
-          if (parts.length < 3) {
-            skippedCount++;
-            continue;
-          }
-
-          let expCategory = (parts[categoryIdx]?.replace(/^["']|["']$/g, "") || "Operations") as any;
-          if (!["Salaries", "Marketing Ads", "Software Subscriptions", "Operations", "Other"].includes(expCategory)) {
-            expCategory = "Other";
-          }
-
-          const rawAmt = parts[amtIdx];
-          const amountValue = Math.max(0.01, parseFloat((rawAmt || "0").replace(/[^0-9.]/g, "")));
-          if (isNaN(amountValue)) {
-            skippedCount++;
-            continue;
-          }
-
-          const desc = (parts[descIdx] || "CSV expense record").replace(/^["']|["']$/g, "");
-          
-          let expDate = parts[dateIdx]?.replace(/^["']|["']$/g, "") || "";
-          if (!expDate || expDate.length < 8) expDate = new Date().toISOString().substring(0, 10);
-
-          const eId = `csv_exp_${Math.random().toString(36).substring(2, 11)}`;
-          const docRef = doc(db, "users", userId, "expenses", eId);
-
-          await setDoc(docRef, {
-            id: eId,
-            userId,
-            category: expCategory,
-            description: desc,
-            amount: amountValue,
-            date: expDate,
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp()
-          });
-
-          addedCount++;
-        }
-
-        setSuccess(`Bulk Upload Completed! Successfully imported ${addedCount} industrial expenses.${skippedCount > 0 ? ` Skipped ${skippedCount} items.` : ""}`);
-      } catch (err: any) {
-        console.error("Bulk expense failure:", err);
-        setError("Failed to parse CSV expenses folder correctly.");
-      }
-    };
-    reader.readAsText(file);
-  };
-
-  const downloadExpenseTemplate = () => {
-    const csvContent = 
-      "Expense Category,Description,Amount,Date of Expense\n" +
-      "Salaries,June payroll sales team,22000,2026-06-01\n" +
-      "Marketing Ads,Q2 Google AdWords campaign,4500,2026-06-02\n" +
-      "Software Subscriptions,Salesforce corporate suite license,1200,2026-06-05\n";
-
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.setAttribute("href", url);
-    link.setAttribute("download", "corporate_expenses_template.csv");
-    link.style.visibility = "hidden";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  // Grid Controls
+  // Delete matching expense
   const handleSort = (field: keyof Expense) => {
     if (sortField === field) {
       setSortOrder(sortOrder === "asc" ? "desc" : "asc");
@@ -332,7 +127,7 @@ export default function CostTracker({ userId, expenses, workingDaysMap }: CostTr
   const formatCurrency = (val: number) => {
     return new Intl.NumberFormat("en-US", {
       style: "currency",
-      currency: "USD",
+      currency: "INR",
       minimumFractionDigits: 0,
       maximumFractionDigits: 0
     }).format(val);
@@ -351,13 +146,6 @@ export default function CostTracker({ userId, expenses, workingDaysMap }: CostTr
             Log overhead, vendor invoices, operational billing, and monitor monthly margins.
           </p>
         </div>
-        
-        <button
-          onClick={() => setIsModalOpen(true)}
-          className="flex items-center justify-center gap-2 py-2 px-4 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold text-sm transition-all shadow-[0_0_15px_rgba(59,130,246,0.35)] shrink-0 cursor-pointer"
-        >
-          <PlusCircle className="h-4.5 w-4.5" /> Log Custom Cost
-        </button>
       </div>
 
       {/* Message Notifications */}
@@ -432,49 +220,8 @@ export default function CostTracker({ userId, expenses, workingDaysMap }: CostTr
           )}
         </div>
 
-        {/* CSV Cost Uploader */}
-        <div className="bg-[#0f172a] p-5 rounded-2xl border border-[#1e293b] bento-card flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-xs font-bold text-slate-300 uppercase tracking-widest flex items-center gap-1.5 font-mono">
-                <FileSpreadsheet className="h-4.5 w-4.5 text-blue-400" /> Bulk Cost Ingestion
-              </h3>
-              <button 
-                onClick={downloadExpenseTemplate}
-                className="text-xs text-blue-400 hover:text-blue-300 font-semibold flex items-center gap-1 cursor-pointer"
-                title="Download Expense template"
-              >
-                <Download className="h-3 w-3" /> Template
-              </button>
-            </div>
-            <p className="text-xs text-slate-400 mb-4 leading-relaxed font-sans">
-              Import organizational overheads (salaries, ads, vendor payouts) in bulk using standard spreadsheet CSV folders.
-            </p>
-          </div>
-
-          <div 
-            onDragEnter={handleDrag}
-            onDragLeave={handleDrag}
-            onDragOver={handleDrag}
-            onDrop={handleDrop}
-            onClick={() => fileInputRef.current?.click()}
-            className={`cursor-pointer border-2 border-dashed rounded-xl p-4 flex flex-col items-center justify-center text-center transition-all min-h-32 ${
-              dragActive 
-                ? "border-blue-500 bg-blue-950/30 text-blue-400 animate-pulse"
-                : "border-[#1e293b] bg-[#020617] hover:bg-[#1e293b]/30 text-slate-400 hover:border-blue-500/65"
-            }`}
-          >
-            <Upload className="h-7 w-7 text-blue-400 mb-2" />
-            <p className="text-xs font-semibold text-slate-200">Drag & Drop Expense CSV</p>
-            <p className="text-[10px] text-slate-500 mt-0.5">or click to browse local folders</p>
-            <input 
-              ref={fileInputRef}
-              type="file" 
-              accept=".csv"
-              onChange={handleFileInput}
-              className="hidden"
-            />
-          </div>
+        <div className="lg:col-span-2">
+          <ExpenseEntryModule userId={userId} />
         </div>
 
         {/* Search & Ledgers list */}
@@ -527,7 +274,7 @@ export default function CostTracker({ userId, expenses, workingDaysMap }: CostTr
                   paginatedExpenses.map((exp) => (
                     <tr key={exp.id} className="hover:bg-[#1e293b]/30 transition-colors">
                       <td className="p-3 font-semibold text-slate-100 whitespace-nowrap">
-                        <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold border ${
+                        <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold border ₹{
                           exp.category === "Salaries"
                             ? "bg-purple-500/10 text-purple-400 border-purple-500/20"
                             : exp.category === "Marketing Ads"
@@ -549,13 +296,15 @@ export default function CostTracker({ userId, expenses, workingDaysMap }: CostTr
                         {exp.date}
                       </td>
                       <td className="p-3 text-right whitespace-nowrap">
-                        <button
-                          onClick={() => handleDeleteExpense(exp.id)}
-                          className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-950/30 transition-all inline-flex cursor-pointer"
-                          title="Delete expense entry"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
+                        {isAdmin && (
+                          <button
+                            onClick={() => handleDeleteExpense(exp.id)}
+                            className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-950/30 transition-all inline-flex cursor-pointer"
+                            title="Delete expense entry"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))
@@ -589,98 +338,6 @@ export default function CostTracker({ userId, expenses, workingDaysMap }: CostTr
         </div>
 
       </div>
-
-      {/* Log Custom Cost modal dialog overlay */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-[#020617]/85 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-[#0f172a] rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border border-[#1e293b] animate-in fade-in zoom-in-95 duration-150 text-slate-100">
-            <div className="flex items-center justify-between px-6 py-4 bg-[#020617] border-b border-[#1e293b]">
-              <h3 className="font-bold text-white text-base">Record Operational Cost</h3>
-              <button 
-                onClick={() => setIsModalOpen(false)}
-                className="p-1 rounded-md text-slate-400 hover:text-slate-100 hover:bg-[#1e293b] transition-all cursor-pointer"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleAddExpense} className="px-6 py-5 space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Cost Classification *</label>
-                <select
-                  value={category}
-                  onChange={(e) => setCategory(e.target.value as any)}
-                  className="w-full px-3 py-2 bg-[#020617] border border-[#1e293b] rounded-lg text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                >
-                  <option value="Salaries">Salaries</option>
-                  <option value="Marketing Ads">Marketing Ads</option>
-                  <option value="Software Subscriptions">Software Subscriptions</option>
-                  <option value="Operations">Operations</option>
-                  <option value="Other">Other Category</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Description / Particulars *</label>
-                <input
-                  type="text"
-                  required
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  className="w-full px-3 py-1.5 bg-[#020617] border border-[#1e293b] rounded-lg text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  placeholder="e.g. AWS server cloud hosting invoices"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Invoice Amount (USD) *</label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-500">$</span>
-                    <input
-                      type="number"
-                      step="0.01"
-                      required
-                      min="0.01"
-                      value={amount}
-                      onChange={(e) => setAmount(e.target.value)}
-                      className="w-full pl-7 pr-3 py-1.5 bg-[#020617] border border-[#1e293b] rounded-lg text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-blue-500 font-semibold font-mono"
-                      placeholder="450"
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Billing Date *</label>
-                  <input
-                    type="date"
-                    required
-                    value={date}
-                    onChange={(e) => setDate(e.target.value)}
-                    className="w-full px-3 py-1.5 bg-[#020617] border border-[#1e293b] rounded-lg text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono"
-                  />
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-2 border-t border-[#1e293b] pt-4 mt-6">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="py-1.5 px-4 rounded-lg text-slate-400 hover:bg-[#1e293b] hover:text-slate-200 transition-all text-xs font-semibold border border-[#1e293b] cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="py-1.5 px-5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs transition-all shadow-[0_0_15px_rgba(59,130,246,0.3)] flex items-center gap-1 disabled:opacity-50 cursor-pointer"
-                >
-                  {submitting ? "Logging..." : "Create Cost Entry"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
     </div>
   );

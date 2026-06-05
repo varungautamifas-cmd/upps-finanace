@@ -3,7 +3,7 @@ import { auth, db, handleFirestoreError, OperationType } from "../firebase";
 import { collection, getDocs, doc, deleteDoc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
 import { 
   Settings, Key, Trash2, ShieldCheck, Database, RefreshCw, 
-  HelpCircle, Sparkles, CheckCircle, AlertCircle, Percent
+  HelpCircle, Sparkles, CheckCircle, AlertCircle, Percent, Users, UserPlus
 } from "lucide-react";
 
 interface SettingsProps {
@@ -18,6 +18,13 @@ export default function SettingsView({ userId, userEmail }: SettingsProps) {
 
   const [taxRate, setTaxRate] = useState<string>("");
   const [taxSaving, setTaxSaving] = useState(false);
+  
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState<"Admin" | "User">("User");
+  const [inviting, setInviting] = useState(false);
+  const [invites, setInvites] = useState<{email: string; role?: string}[]>([]);
+  
+  const isAdmin = userEmail === "uppseekers@gmail.com";
 
   useEffect(() => {
     if (!userId) return;
@@ -32,7 +39,55 @@ export default function SettingsView({ userId, userEmail }: SettingsProps) {
       }
     };
     loadTaxConfig();
-  }, [userId]);
+    
+    if (isAdmin) {
+      const loadInvites = async () => {
+        try {
+          const snap = await getDocs(collection(db, "invites"));
+          setInvites(snap.docs.map(d => ({ email: d.id, role: d.data().role || 'User' })));
+        } catch (err) {
+          console.error("Failed to load invites:", err);
+        }
+      };
+      loadInvites();
+    }
+  }, [userId, isAdmin]);
+
+  const handleInvite = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inviteEmail || !inviteEmail.includes("@")) return;
+    setInviting(true);
+    setSuccess(null);
+    setError(null);
+    try {
+      const standardizedEmail = inviteEmail.toLowerCase().trim();
+      await setDoc(doc(db, "invites", standardizedEmail), {
+        invitedAt: serverTimestamp(),
+        invitedBy: userEmail,
+        role: inviteRole
+      });
+      setInvites(prev => [...prev.filter(i => i.email !== standardizedEmail), { email: standardizedEmail, role: inviteRole }]);
+      setInviteEmail("");
+      setInviteRole("User");
+      setSuccess(`Successfully invited ₹{standardizedEmail} as ₹{inviteRole}`);
+    } catch (err: any) {
+      console.error(err);
+      setError("Failed to send invite.");
+    } finally {
+      setInviting(false);
+    }
+  };
+
+  const handleRevokeInvite = async (email: string) => {
+    try {
+      await deleteDoc(doc(db, "invites", email));
+      setInvites(prev => prev.filter(e => e.email !== email));
+      setSuccess(`Revoked access for ₹{email}`);
+    } catch (err) {
+      console.error("Failed to revoke", err);
+      setError("Failed to revoke invite");
+    }
+  };
 
   const handleSaveTax = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -196,6 +251,72 @@ export default function SettingsView({ userId, userEmail }: SettingsProps) {
             </button>
           </form>
         </div>
+
+        {isAdmin && (
+          <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm space-y-4 md:col-span-2">
+            <h3 className="text-sm font-bold text-slate-800 uppercase tracking-widest flex items-center gap-1.5 border-b border-slate-50 pb-2">
+              <Users className="h-4.5 w-4.5 text-blue-600" /> User Invitations & Access
+            </h3>
+            <p className="text-xs text-slate-500 leading-relaxed">
+              As an administrator, you can invite organizational users. Uninvited users cannot access the application.
+            </p>
+            
+            <form onSubmit={handleInvite} className="flex flex-col sm:flex-row gap-3 mt-4">
+              <div className="flex-1 relative">
+                <input
+                  type="email"
+                  value={inviteEmail}
+                  onChange={(e) => setInviteEmail(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-1 focus:ring-blue-500 font-semibold"
+                  placeholder="colleague@company.com"
+                  required
+                />
+              </div>
+              <div className="w-full sm:w-32">
+                <select
+                  value={inviteRole}
+                  onChange={(e) => setInviteRole(e.target.value as "Admin" | "User")}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-1 focus:ring-blue-500 font-semibold"
+                >
+                  <option value="User">User</option>
+                  <option value="Admin">Admin</option>
+                </select>
+              </div>
+              <button
+                type="submit"
+                disabled={inviting}
+                className="py-2 px-5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm transition-all shadow-sm disabled:opacity-50 flex items-center gap-2"
+              >
+                <UserPlus className="h-4 w-4" />
+                {inviting ? "Inviting..." : "Send Invite"}
+              </button>
+            </form>
+
+            <div className="mt-6 space-y-2">
+              <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Active Invitations</h4>
+              {invites.length === 0 ? (
+                <div className="text-sm text-slate-400 py-3 text-center border border-dashed rounded-lg">No active invites found</div>
+              ) : (
+                <div className="space-y-2">
+                  {invites.map(invite => (
+                    <div key={invite.email} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-100">
+                      <div className="flex flex-col">
+                        <span className="text-sm font-medium text-slate-700">{invite.email}</span>
+                        <span className={`text-[10px] uppercase tracking-wider font-bold mt-0.5 ₹{invite.role === 'Admin' ? 'text-blue-600' : 'text-slate-500'}`}>{invite.role}</span>
+                      </div>
+                      <button 
+                        onClick={() => handleRevokeInvite(invite.email)}
+                        className="text-xs text-red-500 hover:text-red-700 font-semibold uppercase tracking-wide"
+                      >
+                        Revoke
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Dynamic Reset Data Card */}
         <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm space-y-3.5 md:col-span-2">

@@ -22,10 +22,28 @@ export interface RevenueClosure {
 export interface Expense {
   id: string;
   userId: string;
-  category: 'Salaries' | 'Marketing Ads' | 'Software Subscriptions' | 'Operations' | 'Other';
+  category: 'Salaries' | 'Marketing Ads' | 'Software Subscriptions' | 'Operations' | 'Infrastructure' | 'Miscellaneous' | 'Other';
   description: string;
   amount: number;
   date: string; // YYYY-MM-DD
+  
+  // Marketing specific
+  transactionId?: string;
+  paymentMethod?: string;
+  currency?: string;
+
+  // Salary specific
+  employeeName?: string;
+  designation?: string;
+  employmentType?: string;
+  monthlySalary?: number;
+  daysWorked?: number;
+  paidThrough?: string; // Also shared with Infra/Misc
+
+  // Infra / Misc Specific
+  type?: string; 
+  receiptImage?: string; // base64
+
   createdAt: any; // Firestore Timestamp
   updatedAt: any; // Firestore Timestamp
 }

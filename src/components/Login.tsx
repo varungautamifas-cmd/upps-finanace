@@ -1,6 +1,7 @@
 import React, { useState } from "react";
-import { auth } from "../firebase";
+import { auth, db } from "../firebase";
 import { signInWithPopup, GoogleAuthProvider } from "firebase/auth";
+import { doc, getDoc } from "firebase/firestore";
 import { TrendingUp, LogIn, CheckCircle, AlertCircle } from "lucide-react";
 
 export default function Login() {
@@ -15,7 +16,20 @@ export default function Login() {
 
     try {
       const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
+      const res = await signInWithPopup(auth, provider);
+      
+      const email = res.user.email;
+      if (email !== "uppseekers@gmail.com") {
+        const docRef = doc(db, "invites", email || "invalid");
+        const docSnap = await getDoc(docRef);
+        if (!docSnap.exists()) {
+          await auth.signOut();
+          setError("Access Denied. Your account has not been authorized. Contact uppseekers@gmail.com for access.");
+          setLoading(false);
+          return;
+        }
+      }
+
       setSuccess("Signed in successfully! Loading dashboard...");
     } catch (err: any) {
       console.error("Auth action failure:", err);

@@ -1,6 +1,6 @@
 {
-  "name": "Profit and Loss and Financial Tracker",
-  "description": "Comprehensive P&L and financial tracking app with interactive text-to-chart analysis using Gemini.",
+  "name": "PNL Tracker",
+  "description": "Comprehensive Profit and Loss financial tracking app with interactive text-to-chart analysis using Gemini.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

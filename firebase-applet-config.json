@@ -1,10 +1,10 @@
 {
-  "projectId": "continual-bus-9w1xt",
-  "appId": "1:1006913885913:web:0b3827059142dbd7a0d0c8",
-  "apiKey": "AIzaSyBl077aH7inl8JWhPf78AZua8tAsnxWfgk",
-  "authDomain": "continual-bus-9w1xt.firebaseapp.com",
+  "projectId": "pnl-tracker-75fcb",
+  "appId": "1:332887560441:web:edf3fa5f7488b8521a9228",
+  "apiKey": "AIzaSyBKZlqRhgB0HX2dz5ZQgD4BndY2_cHc3vI",
+  "authDomain": "pnl-tracker-75fcb.firebaseapp.com",
   "firestoreDatabaseId": "ai-studio-ace1b8bc-6a61-45d0-924b-d07cad6e9297",
-  "storageBucket": "continual-bus-9w1xt.firebasestorage.app",
-  "messagingSenderId": "1006913885913",
+  "storageBucket": "pnl-tracker-75fcb.firebasestorage.app",
+  "messagingSenderId": "332887560441",
   "measurementId": ""
 }

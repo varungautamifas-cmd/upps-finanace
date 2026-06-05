@@ -17,8 +17,13 @@ interface DashboardProps {
 
 export default function Dashboard({ revenueClosures, expenses, workingDaysMap }: DashboardProps) {
   // Global Filters
-  const [selectedYear, setSelectedYear] = useState<string>("All");
+  const [filterMode, setFilterMode] = useState<"All" | "MonthYear" | "Custom">("All");
+  
+  const [selectedYear, setSelectedYear] = useState<string>(new Date().getFullYear().toString());
   const [selectedMonth, setSelectedMonth] = useState<string>("All");
+
+  const [customStartDate, setCustomStartDate] = useState<string>("");
+  const [customEndDate, setCustomEndDate] = useState<string>("");
 
   // Query state
   const [naturalQuery, setNaturalQuery] = useState("");
@@ -62,7 +67,7 @@ export default function Dashboard({ revenueClosures, expenses, workingDaysMap }:
   const formatCurrency = (val: number) => {
     return new Intl.NumberFormat("en-US", {
       style: "currency",
-      currency: "USD",
+      currency: "INR",
       minimumFractionDigits: 0,
       maximumFractionDigits: 0
     }).format(val);
@@ -73,19 +78,36 @@ export default function Dashboard({ revenueClosures, expenses, workingDaysMap }:
     // Determine target month and year
     // Filter records
     const filteredClosures = revenueClosures.filter(c => {
-      const yr = c.closureDate.substring(0, 4);
-      const mo = c.closureDate.substring(5, 7);
+      const expDate = c.closureDate;
+      const yr = expDate.substring(0, 4);
+      const mo = expDate.substring(5, 7);
       
-      const yearMatch = selectedYear === "All" || yr === selectedYear;
+      if (filterMode === "All") return true;
+      if (filterMode === "Custom") {
+        if (customStartDate && expDate < customStartDate) return false;
+        if (customEndDate && expDate > customEndDate) return false;
+        return true;
+      }
+      
+      // MonthYear mode
+      const yearMatch = yr === selectedYear;
       const monthMatch = selectedMonth === "All" || mo === selectedMonth;
       return yearMatch && monthMatch;
     });
 
     const filteredExpenses = expenses.filter(e => {
-      const yr = e.date.substring(0, 4);
-      const mo = e.date.substring(5, 7);
+      const expDate = e.date;
+      const yr = expDate.substring(0, 4);
+      const mo = expDate.substring(5, 7);
       
-      const yearMatch = selectedYear === "All" || yr === selectedYear;
+      if (filterMode === "All") return true;
+      if (filterMode === "Custom") {
+        if (customStartDate && expDate < customStartDate) return false;
+        if (customEndDate && expDate > customEndDate) return false;
+        return true;
+      }
+
+      const yearMatch = yr === selectedYear;
       const monthMatch = selectedMonth === "All" || mo === selectedMonth;
       return yearMatch && monthMatch;
     });
@@ -103,18 +125,24 @@ export default function Dashboard({ revenueClosures, expenses, workingDaysMap }:
     const pnlBeforeTax = totalRev - totalCost;
 
     // 5. Net Profit post taxes (Tax/GST amount deducted)
-    const totalTaxInFilters = filteredClosures.reduce((acc, curr) => acc + curr.taxAmount, 0);
+    let totalTaxInFilters = 0;
+    filteredClosures.forEach(curr => {
+      const pCost = curr.packageCost || 0;
+      const tAmt = curr.taxAmount || 0;
+      const invoiceTotal = pCost + tAmt;
+      if (invoiceTotal > 0 && tAmt > 0) {
+        totalTaxInFilters += curr.cashPaid * (tAmt / invoiceTotal);
+      }
+    });
+    
     const pnlAfterTax = totalRev - totalCost - totalTaxInFilters;
 
     // 6. Working Days & burn rate
-    // If a specific month is selected (e.g. "06" for June), lookup or default to 22.
-    // If "All" represents multiple months, we sum up days or default to 22 per selected year/all.
     let workingDays = 22;
-    if (selectedYear !== "All" && selectedMonth !== "All") {
+    if (filterMode === "MonthYear" && selectedMonth !== "All") {
       const key = `${selectedYear}-${selectedMonth}`;
       workingDays = workingDaysMap[key] || 22;
-    } else if (selectedYear !== "All" && selectedMonth === "All") {
-      // Find all custom days configured for that year, sum them up, otherwise 22 * 12
+    } else if (filterMode === "MonthYear" && selectedMonth === "All") {
       let customSum = 0;
       let count = 0;
       for (let m = 1; m <= 12; m++) {
@@ -126,6 +154,13 @@ export default function Dashboard({ revenueClosures, expenses, workingDaysMap }:
         }
       }
       workingDays = customSum + (12 - count) * 22;
+    } else if (filterMode === "Custom" && customStartDate && customEndDate) {
+      // Rough approximation by diff days
+      const d1 = new Date(customStartDate);
+      const d2 = new Date(customEndDate);
+      const diffTime = Math.abs(d2.getTime() - d1.getTime());
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+      workingDays = Math.max(1, Math.floor(diffDays * (5/7))); // ~5 days out of 7
     } else {
       workingDays = 220; // Default generic multi-year factor
     }
@@ -141,7 +176,7 @@ export default function Dashboard({ revenueClosures, expenses, workingDaysMap }:
       dailyBurnRate: burnRate,
       totalWorkingDays: workingDays
     });
-  }, [revenueClosures, expenses, selectedYear, selectedMonth, workingDaysMap]);
+  }, [revenueClosures, expenses, filterMode, selectedYear, selectedMonth, customStartDate, customEndDate, workingDaysMap]);
 
   // Handle NLP query request to custom charting route
   const handleNLPQuery = async (e: React.FormEvent) => {
@@ -188,9 +223,16 @@ export default function Dashboard({ revenueClosures, expenses, workingDaysMap }:
     const targetExpenses = [...expenses].sort((a,b) => a.date.localeCompare(b.date));
 
     targetClosures.forEach(c => {
-      const yr = c.closureDate.substring(0, 4);
-      if (selectedYear !== "All" && yr !== selectedYear) return;
-      const monthName = c.closureDate.substring(0, 7); // e.g., "2026-06"
+      const expDate = c.closureDate;
+      const yr = expDate.substring(0, 4);
+      
+      if (filterMode === "MonthYear" && yr !== selectedYear) return;
+      if (filterMode === "Custom") {
+        if (customStartDate && expDate < customStartDate) return;
+        if (customEndDate && expDate > customEndDate) return;
+      }
+
+      const monthName = expDate.substring(0, 7); // e.g., "2026-06"
       if (!monthlyMap[monthName]) {
         monthlyMap[monthName] = { name: monthName, revenue: 0, expense: 0 };
       }
@@ -198,9 +240,16 @@ export default function Dashboard({ revenueClosures, expenses, workingDaysMap }:
     });
 
     targetExpenses.forEach(e => {
-      const yr = e.date.substring(0, 4);
-      if (selectedYear !== "All" && yr !== selectedYear) return;
-      const monthName = e.date.substring(0, 7);
+      const expDate = e.date;
+      const yr = expDate.substring(0, 4);
+
+      if (filterMode === "MonthYear" && yr !== selectedYear) return;
+      if (filterMode === "Custom") {
+        if (customStartDate && expDate < customStartDate) return;
+        if (customEndDate && expDate > customEndDate) return;
+      }
+
+      const monthName = expDate.substring(0, 7);
       if (!monthlyMap[monthName]) {
         monthlyMap[monthName] = { name: monthName, revenue: 0, expense: 0 };
       }
@@ -220,10 +269,18 @@ export default function Dashboard({ revenueClosures, expenses, workingDaysMap }:
     };
 
     revenueClosures.forEach(c => {
-      const yr = c.closureDate.substring(0, 4);
-      const mo = c.closureDate.substring(5, 7);
-      if (selectedYear !== "All" && yr !== selectedYear) return;
-      if (selectedMonth !== "All" && mo !== selectedMonth) return;
+      const expDate = c.closureDate;
+      const yr = expDate.substring(0, 4);
+      const mo = expDate.substring(5, 7);
+      
+      if (filterMode === "MonthYear") {
+        if (yr !== selectedYear) return;
+        if (selectedMonth !== "All" && mo !== selectedMonth) return;
+      }
+      if (filterMode === "Custom") {
+        if (customStartDate && expDate < customStartDate) return;
+        if (customEndDate && expDate > customEndDate) return;
+      }
 
       if (distribution[c.paymentType] !== undefined) {
         distribution[c.paymentType]++;
@@ -313,7 +370,7 @@ export default function Dashboard({ revenueClosures, expenses, workingDaysMap }:
                   </BarChart>
                 ) : chartType === "pie" ? (
                   <PieChart>
-                    <Pie data={data} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} fill="#8884d8" label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}>
+                    <Pie data={data} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} fill="#8884d8" label={({ name, percent }) => `${name}: ₹{(percent * 100).toFixed(0)}%`}>
                       {data.map((entry, index) => (
                         <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
                       ))}
@@ -372,45 +429,75 @@ export default function Dashboard({ revenueClosures, expenses, workingDaysMap }:
         </div>
         
         {/* Dropdowns */}
-        <div className="flex items-center gap-2 w-full md:w-auto">
-          <div className="flex items-center gap-1.5 border border-[#1e293b] px-3 py-1.5 rounded-lg bg-[#020617] text-xs font-semibold text-slate-300 shrink-0">
-            <Calendar className="h-3.5 w-3.5 text-blue-400" /> Period:
+        <div className="flex flex-col md:flex-row items-center gap-3 w-full md:w-auto mt-4 md:mt-0">
+          <div className="flex w-full items-center gap-1.5 border border-[#1e293b] px-3 py-1.5 rounded-lg bg-[#020617] text-xs font-semibold text-slate-300 shrink-0">
+            <Calendar className="h-4 w-4 text-emerald-400" /> Filter:
+            
+            <select
+              value={filterMode}
+              onChange={(e) => setFilterMode(e.target.value as any)}
+              className="ml-1 bg-transparent border-none text-slate-100 focus:ring-0 focus:outline-none placeholder-slate-500 font-semibold text-xs min-w-[100px] cursor-pointer"
+            >
+              <option value="All">All Time</option>
+              <option value="MonthYear">Year & Month</option>
+              <option value="Custom">Custom Date Range</option>
+            </select>
           </div>
           
-          <select
-            value={selectedYear}
-            onChange={(e) => {
-              setSelectedYear(e.target.value);
-              setSelectedMonth("All"); // Reset month on year change
-            }}
-            className="block w-full md:w-32 py-1.5 px-3 border border-[#1e293b] bg-[#020617] text-slate-100 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-          >
-            <option value="All">All Years</option>
-            {availableYears.map(yr => (
-              <option key={yr} value={yr}>{yr}</option>
-            ))}
-          </select>
+          {filterMode === "MonthYear" && (
+            <div className="flex items-center gap-2 w-full animate-fade-in">
+              <select
+                value={selectedYear}
+                onChange={(e) => {
+                  setSelectedYear(e.target.value);
+                  setSelectedMonth("All");
+                }}
+                className="block w-full py-1.5 px-3 border border-[#1e293b] bg-[#020617] text-slate-100 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+              >
+                {availableYears.map(yr => (
+                  <option key={yr} value={yr}>{yr}</option>
+                ))}
+              </select>
 
-          <select
-            value={selectedMonth}
-            disabled={selectedYear === "All"}
-            onChange={(e) => setSelectedMonth(e.target.value)}
-            className="block w-full md:w-36 py-1.5 px-3 border border-[#1e293b] bg-[#020617] text-slate-100 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-30 disabled:cursor-not-allowed"
-          >
-            <option value="All">All Months</option>
-            <option value="01">January</option>
-            <option value="02">February</option>
-            <option value="03">March</option>
-            <option value="04">April</option>
-            <option value="05">May</option>
-            <option value="06">June</option>
-            <option value="07">July</option>
-            <option value="08">August</option>
-            <option value="09">September</option>
-            <option value="10">October</option>
-            <option value="11">November</option>
-            <option value="12">December</option>
-          </select>
+              <select
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(e.target.value)}
+                className="block w-full py-1.5 px-3 border border-[#1e293b] bg-[#020617] text-slate-100 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+              >
+                <option value="All">All Months</option>
+                <option value="01">January</option>
+                <option value="02">February</option>
+                <option value="03">March</option>
+                <option value="04">April</option>
+                <option value="05">May</option>
+                <option value="06">June</option>
+                <option value="07">July</option>
+                <option value="08">August</option>
+                <option value="09">September</option>
+                <option value="10">October</option>
+                <option value="11">November</option>
+                <option value="12">December</option>
+              </select>
+            </div>
+          )}
+
+          {filterMode === "Custom" && (
+            <div className="flex items-center gap-2 w-full animate-fade-in text-slate-300">
+              <input
+                type="date"
+                value={customStartDate}
+                onChange={(e) => setCustomStartDate(e.target.value)}
+                className="block w-full py-1.5 px-2 border border-[#1e293b] bg-[#020617] text-slate-100 rounded-lg text-xs font-mono focus:outline-none focus:ring-1 focus:ring-blue-500"
+              />
+              <span className="text-xs font-semibold text-slate-500">to</span>
+              <input
+                type="date"
+                value={customEndDate}
+                onChange={(e) => setCustomEndDate(e.target.value)}
+                className="block w-full py-1.5 px-2 border border-[#1e293b] bg-[#020617] text-slate-100 rounded-lg text-xs font-mono focus:outline-none focus:ring-1 focus:ring-blue-500"
+              />
+            </div>
+          )}
         </div>
       </div>
 
@@ -531,14 +618,28 @@ export default function Dashboard({ revenueClosures, expenses, workingDaysMap }:
           </div>
         </div>
 
-        {/* Profit Loss Post-Tax */}
+        {/* Distributed Tax on Cash Paid */}
         <div className="bg-[#0f172a] p-5 rounded-2xl border border-[#1e293b] bento-card flex items-center justify-between">
+          <div className="space-y-1">
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider font-mono">Tax on Cash Received</p>
+            <p className={`text-2xl font-bold font-mono text-amber-400`}>
+              {formatCurrency(stats.netProfitLossBeforeTax - stats.netProfitLossAfterTax)}
+            </p>
+            <span className="text-[10px] uppercase font-mono tracking-wider text-slate-500">Proportional Tax Allocation</span>
+          </div>
+          <div className={`h-12 w-12 rounded-xl flex items-center justify-center border bg-amber-500/10 border-amber-500/20 text-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.1)]`}>
+            <DollarSign className="h-6 w-6" />
+          </div>
+        </div>
+
+        {/* Profit Loss Post-Tax */}
+        <div className="bg-[#0f172a] p-5 rounded-2xl border border-[#1e293b] bento-card flex items-center justify-between lg:col-span-2">
           <div className="space-y-1">
             <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider font-mono">Net Profit post taxes</p>
             <p className={`text-2xl font-bold font-mono ${stats.netProfitLossAfterTax >= 0 ? "text-slate-100" : "text-rose-400"}`}>
               {formatCurrency(stats.netProfitLossAfterTax)}
             </p>
-            <span className="text-[10px] uppercase font-mono tracking-wider text-slate-500">Rev - Costs - Tax paid</span>
+            <span className="text-[10px] uppercase font-mono tracking-wider text-slate-500">Rev - Costs - Tax alloc</span>
           </div>
           <div className={`h-12 w-12 rounded-xl flex items-center justify-center border ${stats.netProfitLossAfterTax >= 0 ? "bg-cyan-500/10 border-cyan-500/20 text-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.1)]" : "bg-rose-500/10 border-rose-500/20 text-rose-400 shadow-[0_0_15px_rgba(244,63,94,0.1)]"}`}>
             <TrendingUp className="h-6 w-6" />

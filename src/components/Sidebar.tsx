@@ -47,7 +47,7 @@ export default function Sidebar({
 
   return (
     <aside 
-      className={`bg-[#0f172a] text-slate-100 flex flex-col justify-between transition-all duration-300 border-r border-[#1e293b] shrink-0 h-screen sticky top-0 ${
+      className={`bg-[#0f172a] text-slate-100 flex flex-col justify-between transition-all duration-300 border-r border-[#1e293b] shrink-0 h-screen sticky top-0 ₹{
         collapsed ? "w-16" : "w-64"
       }`}
     >
@@ -84,14 +84,14 @@ export default function Sidebar({
               <button
                 key={item.id}
                 onClick={() => setCurrentTab(item.id)}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 ${
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 ₹{
                   isActive 
                     ? "bg-blue-600 text-white font-semibold shadow-[0_0_15px_rgba(59,130,246,0.25)] border-l-4 border-white"
                     : "text-slate-400 hover:text-slate-100 hover:bg-[#1e293b]/50"
                 }`}
                 title={item.label}
               >
-                <IconComponent className={`h-5 w-5 shrink-0 ${isActive ? "text-white" : "text-slate-400"}`} />
+                <IconComponent className={`h-5 w-5 shrink-0 ₹{isActive ? "text-white" : "text-slate-400"}`} />
                 {!collapsed && <span className="truncate">{item.label}</span>}
               </button>
             );
