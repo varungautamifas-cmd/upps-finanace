@@ -1,0 +1,117 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net default-deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // RevenueClosure verification helper
+    function isValidRevenueClosure(data) {
+      return data.keys().hasAll([
+        'id', 'userId', 'customerName', 'customerEmail', 'packageDetails',
+        'packageCost', 'taxAmount', 'cashPaid', 'remainingAmount',
+        'nextInstallmentDate', 'paymentType', 'closureDate', 'createdAt', 'updatedAt'
+      ]) && data.keys().size() == 14
+         && data.id is string && data.id.size() <= 128
+         && data.userId is string && data.userId.size() <= 128
+         && data.customerName is string && data.customerName.size() <= 200
+         && data.customerEmail is string && data.customerEmail.size() <= 200
+         && data.packageDetails is string && data.packageDetails.size() <= 1000
+         && data.packageCost is number && data.packageCost >= 0
+         && data.taxAmount is number && data.taxAmount >= 0
+         && data.cashPaid is number && data.cashPaid >= 0
+         && data.remainingAmount is number
+         && data.nextInstallmentDate is string && data.nextInstallmentDate.size() <= 10
+         && data.paymentType is string && (data.paymentType == 'EMI' || data.paymentType == 'EQI' || data.paymentType == 'ESAI' || data.paymentType == 'Full Payment')
+         && data.closureDate is string && data.closureDate.size() <= 10;
+    }
+
+    // Expense verification helper
+    function isValidExpense(data) {
+      return data.keys().hasAll([
+        'id', 'userId', 'category', 'description', 'amount', 'date', 'createdAt', 'updatedAt'
+      ]) && data.keys().size() == 8
+         && data.id is string && data.id.size() <= 128
+         && data.userId is string && data.userId.size() <= 128
+         && data.category is string && data.category.size() <= 128
+         && data.description is string && data.description.size() <= 1000
+         && data.amount is number && data.amount >= 0
+         && data.date is string && data.date.size() <= 10;
+    }
+
+    // WorkingDays verification helper
+    function isValidWorkingDaysConfig(data) {
+      return data.keys().hasAll([
+        'monthYear', 'workingDays', 'updatedAt'
+      ]) && data.keys().size() == 3
+         && data.monthYear is string && data.monthYear.size() <= 7
+         && data.workingDays is number && data.workingDays >= 0 && data.workingDays <= 31;
+    }
+
+    // Relational Isolation Match Blocks
+    match /users/{userId} {
+      allow read, write: if isOwner(userId);
+
+      match /revenueClosures/{closureId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(closureId) 
+                     && isValidRevenueClosure(incoming()) 
+                     && incoming().userId == userId 
+                     && incoming().createdAt == request.time
+                     && incoming().updatedAt == request.time;
+        allow update: if isOwner(userId) && isValidId(closureId) 
+                     && isValidRevenueClosure(incoming())
+                     && incoming().userId == userId
+                     && incoming().createdAt == existing().createdAt
+                     && incoming().updatedAt == request.time;
+        allow delete: if isOwner(userId) && isValidId(closureId);
+      }
+
+      match /expenses/{expenseId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(expenseId)
+                     && isValidExpense(incoming())
+                     && incoming().userId == userId
+                     && incoming().createdAt == request.time
+                     && incoming().updatedAt == request.time;
+        allow update: if isOwner(userId) && isValidId(expenseId)
+                     && isValidExpense(incoming())
+                     && incoming().userId == userId
+                     && incoming().createdAt == existing().createdAt
+                     && incoming().updatedAt == request.time;
+        allow delete: if isOwner(userId) && isValidId(expenseId);
+      }
+
+      match /workingDays/{monthYear} {
+        allow read: if isOwner(userId);
+        allow create, update: if isOwner(userId) && isValidId(monthYear)
+                              && isValidWorkingDaysConfig(incoming())
+                              && incoming().updatedAt == request.time;
+        allow delete: if isOwner(userId) && isValidId(monthYear);
+      }
+    }
+  }
+}

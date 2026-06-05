@@ -1,0 +1,81 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile holding metadata",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" }
+      },
+      "required": ["uid", "email"]
+    },
+    "RevenueClosure": {
+      "title": "Revenue Closure",
+      "description": "Client sales closures database logging",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "customerName": { "type": "string" },
+        "customerEmail": { "type": "string" },
+        "packageDetails": { "type": "string" },
+        "packageCost": { "type": "number" },
+        "taxAmount": { "type": "number" },
+        "cashPaid": { "type": "number" },
+        "remainingAmount": { "type": "number" },
+        "nextInstallmentDate": { "type": "string" },
+        "paymentType": { "type": "string", "enum": ["EMI", "EQI", "ESAI", "Full Payment"] },
+        "closureDate": { "type": "string" },
+        "createdAt": { "type": "object" },
+        "updatedAt": { "type": "object" }
+      },
+      "required": ["id", "userId", "customerName", "customerEmail", "packageDetails", "packageCost", "taxAmount", "cashPaid", "remainingAmount", "nextInstallmentDate", "paymentType", "closureDate", "createdAt", "updatedAt"]
+    },
+    "Expense": {
+      "title": "Expense",
+      "description": "Organizational cost or expense",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "category": { "type": "string" },
+        "description": { "type": "string" },
+        "amount": { "type": "number" },
+        "date": { "type": "string" },
+        "createdAt": { "type": "object" },
+        "updatedAt": { "type": "object" }
+      },
+      "required": ["id", "userId", "category", "description", "amount", "date", "createdAt", "updatedAt"]
+    },
+    "WorkingDaysConfig": {
+      "title": "Working Days Config",
+      "description": "Monthly metadata configuration of working days",
+      "type": "object",
+      "properties": {
+        "monthYear": { "type": "string" },
+        "workingDays": { "type": "number" },
+        "updatedAt": { "type": "object" }
+      },
+      "required": ["monthYear", "workingDays", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": "User",
+      "description": "The user's private settings"
+    },
+    "users/{userId}/revenueClosures/{closureId}": {
+      "schema": "RevenueClosure",
+      "description": "Revenue closures for the specific user"
+    },
+    "users/{userId}/expenses/{expenseId}": {
+      "schema": "Expense",
+      "description": "Expenses for the specific user"
+    },
+    "users/{userId}/workingDays/{monthYear}": {
+      "schema": "WorkingDaysConfig",
+      "description": "Working days metadata configuration for the month"
+    }
+  }
+}
